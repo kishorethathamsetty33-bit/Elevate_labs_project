@@ -1,0 +1,1043 @@
+Microsoft Windows [Version 10.0.26200.9711]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\Kishore>where /r "C:\Program Files" mysql.exe
+C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe
+C:\Program Files\MySQL\MySQL Workbench 8.0\mysql.exe
+
+C:\Users\Kishore>"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" --local-infile=1 -u root -p
+Enter password: ************
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 13
+Server version: 8.0.46 MySQL Community Server - GPL
+
+Copyright (c) 2000, 2026, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SHOW GLOBAL VARIABLES LIKE 'local_infile';
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| local_infile  | ON    |
++---------------+-------+
+1 row in set (0.01 sec)
+
+mysql> SET GLOBAL local_infile = ON;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql>
+mysql> SHOW GLOBAL VARIABLES LIKE 'local_infile';
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| local_infile  | ON    |
++---------------+-------+
+1 row in set (0.00 sec)
+
+mysql> USE ecommerce_returns;
+Database changed
+mysql>
+mysql> -- Create a clean table by converting raw text columns into appropriate data types.
+mysql>
+mysql> DROP TABLE IF EXISTS ecommerce_orders;
+Query OK, 0 rows affected (0.05 sec)
+
+mysql>
+mysql> CREATE TABLE ecommerce_orders AS
+    -> SELECT
+    ->     TRIM(Order_ID) AS Order_ID,
+    ->     STR_TO_DATE(TRIM(Order_Date), '%Y-%m-%d') AS Order_Date,
+    ->     TRIM(Customer_ID) AS Customer_ID,
+    ->     TRIM(Product_ID) AS Product_ID,
+    ->     TRIM(Category) AS Category,
+    ->     TRIM(Supplier_ID) AS Supplier_ID,
+    ->     TRIM(Region) AS Region,
+    ->     TRIM(State) AS State,
+    ->     TRIM(Marketing_Channel) AS Marketing_Channel,
+    ->     TRIM(Payment_Method) AS Payment_Method,
+    ->     TRIM(Shipping_Method) AS Shipping_Method,
+    ->     CAST(NULLIF(TRIM(Quantity),'') AS DECIMAL(10,2)) AS Quantity,
+    ->     CAST(NULLIF(TRIM(Unit_Price),'') AS DECIMAL(12,2)) AS Unit_Price,
+    ->     CAST(NULLIF(TRIM(Discount_Rate),'') AS DECIMAL(10,4)) AS Discount_Rate,
+    ->     CAST(NULLIF(TRIM(Order_Value),'') AS DECIMAL(14,2)) AS Order_Value,
+    ->     CAST(NULLIF(TRIM(Delivery_Days),'') AS DECIMAL(10,2)) AS Delivery_Days,
+    ->     CAST(NULLIF(TRIM(Customer_Rating),'') AS DECIMAL(5,2)) AS Customer_Rating,
+    ->     TRIM(Return_Status) AS Return_Status,
+    ->     CAST(NULLIF(TRIM(Return_Days_After_Delivery),'') AS DECIMAL(10,2)) AS Return_Days_After_Delivery,
+    ->     NULLIF(TRIM(Return_Reason),'') AS Return_Reason,
+    ->     CAST(NULLIF(TRIM(Calculated_Order_Value),'') AS DECIMAL(14,2)) AS Calculated_Order_Value,
+    ->     CAST(NULLIF(TRIM(Value_Difference),'') AS DECIMAL(14,2)) AS Value_Difference,
+    ->     TRIM(Order_Value_Mismatch) AS Order_Value_Mismatch,
+    ->     CAST(NULLIF(TRIM(Order_Year),'') AS UNSIGNED) AS Order_Year,
+    ->     CAST(NULLIF(TRIM(Order_Month),'') AS UNSIGNED) AS Order_Month,
+    ->     CAST(NULLIF(TRIM(Order_Quarter),'') AS UNSIGNED) AS Order_Quarter,
+    ->     CAST(NULLIF(TRIM(Order_DayOfWeek),'') AS UNSIGNED) AS Order_DayOfWeek,
+    ->     CAST(NULLIF(TRIM(Is_Returned),'') AS UNSIGNED) AS Is_Returned
+    -> FROM ecommerce_returns_raw;
+Query OK, 100000 rows affected (3.14 sec)
+Records: 100000  Duplicates: 0  Warnings: 0
+
+mysql>
+mysql>
+mysql> -- Check the total number of records in the cleaned dataset.
+mysql>
+mysql> SELECT COUNT(*) AS Total_Records
+    -> FROM ecommerce_orders;
++---------------+
+| Total_Records |
++---------------+
+|        100000 |
++---------------+
+1 row in set (0.02 sec)
+
+mysql>
+mysql>
+mysql> -- Identify duplicate order IDs.
+mysql>
+mysql> SELECT
+    ->     COUNT(*) - COUNT(DISTINCT Order_ID) AS Duplicate_Order_IDs
+    -> FROM ecommerce_orders;
++---------------------+
+| Duplicate_Order_IDs |
++---------------------+
+|                   0 |
++---------------------+
+1 row in set (0.56 sec)
+
+mysql>
+mysql>
+mysql> -- Check missing values in important columns.
+mysql>
+mysql> SELECT
+    ->     SUM(Order_Date IS NULL) AS Missing_Order_Date,
+    ->     SUM(Product_ID IS NULL OR Product_ID = '') AS Missing_Product_ID,
+    ->     SUM(Category IS NULL OR Category = '') AS Missing_Category,
+    ->     SUM(Supplier_ID IS NULL OR Supplier_ID = '') AS Missing_Supplier,
+    ->     SUM(Is_Returned IS NULL) AS Missing_Return_Target
+    -> FROM ecommerce_orders;
++--------------------+--------------------+------------------+------------------+-----------------------+
+| Missing_Order_Date | Missing_Product_ID | Missing_Category | Missing_Supplier | Missing_Return_Target |
++--------------------+--------------------+------------------+------------------+-----------------------+
+|                  0 |                  0 |                0 |                0 |                     0 |
++--------------------+--------------------+------------------+------------------+-----------------------+
+1 row in set (0.16 sec)
+
+mysql>
+mysql>
+mysql> -- Validate the relationship between return status and the binary return target.
+mysql>
+mysql> SELECT
+    ->     Return_Status,
+    ->     Is_Returned,
+    ->     COUNT(*) AS Order_Count
+    -> FROM ecommerce_orders
+    -> GROUP BY Return_Status, Is_Returned
+    -> ORDER BY Return_Status, Is_Returned;
++---------------+-------------+-------------+
+| Return_Status | Is_Returned | Order_Count |
++---------------+-------------+-------------+
+| Not Returned  |           0 |       85953 |
+| Returned      |           1 |       14047 |
++---------------+-------------+-------------+
+2 rows in set (0.16 sec)
+
+mysql>
+mysql>
+mysql> -- Calculate the overall order count and return rate.
+mysql>
+mysql> SELECT
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     SUM(Is_Returned = 0) AS Non_Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders;
++--------------+-----------------+---------------------+------------------------+
+| Total_Orders | Returned_Orders | Non_Returned_Orders | Return_Rate_Percentage |
++--------------+-----------------+---------------------+------------------------+
+|       100000 |           14047 |               85953 |                  14.05 |
++--------------+-----------------+---------------------+------------------------+
+1 row in set (0.11 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze return rates across product categories.
+mysql>
+mysql> SELECT
+    ->     Category,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Category
+    -> ORDER BY Return_Rate_Percentage DESC;
++----------------+--------------+-----------------+------------------------+
+| Category       | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++----------------+--------------+-----------------+------------------------+
+| Fashion        |        27843 |            4175 |                  14.99 |
+| Electronics    |        21900 |            3082 |                  14.07 |
+| Sports         |        11861 |            1641 |                  13.84 |
+| Home & Kitchen |        18254 |            2519 |                  13.80 |
+| Beauty         |        12084 |            1624 |                  13.44 |
+| Books          |         8058 |            1006 |                  12.48 |
++----------------+--------------+-----------------+------------------------+
+6 rows in set (0.19 sec)
+
+mysql>
+mysql>
+mysql> -- Identify suppliers with the highest return rates.
+mysql>
+mysql> SELECT
+    ->     Supplier_ID,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Supplier_ID
+    -> ORDER BY Return_Rate_Percentage DESC
+    -> LIMIT 10;
++-------------+--------------+-----------------+------------------------+
+| Supplier_ID | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------+--------------+-----------------+------------------------+
+| SUP020      |         3318 |             509 |                  15.34 |
+| SUP008      |         3311 |             496 |                  14.98 |
+| SUP015      |         3350 |             499 |                  14.90 |
+| SUP001      |         3325 |             486 |                  14.62 |
+| SUP017      |         3333 |             487 |                  14.61 |
+| SUP022      |         3283 |             478 |                  14.56 |
+| SUP011      |         3342 |             484 |                  14.48 |
+| SUP007      |         3366 |             486 |                  14.44 |
+| SUP013      |         3320 |             478 |                  14.40 |
+| SUP024      |         3488 |             501 |                  14.36 |
++-------------+--------------+-----------------+------------------------+
+10 rows in set (0.20 sec)
+
+mysql>
+mysql>
+mysql> -- Compare return rates across geographical regions.
+mysql>
+mysql> SELECT
+    ->     Region,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Region
+    -> ORDER BY Return_Rate_Percentage DESC;
++---------+--------------+-----------------+------------------------+
+| Region  | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++---------+--------------+-----------------+------------------------+
+| Central |        15067 |            2152 |                  14.28 |
+| East    |        14981 |            2138 |                  14.27 |
+| West    |        21749 |            3076 |                  14.14 |
+| North   |        20084 |            2832 |                  14.10 |
+| South   |        28119 |            3849 |                  13.69 |
++---------+--------------+-----------------+------------------------+
+5 rows in set (0.22 sec)
+
+mysql>
+mysql>
+mysql> -- Identify states with higher return rates, considering states with at least 100 orders.
+mysql>
+mysql> SELECT
+    ->     State,
+    ->     Region,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY State, Region
+    -> HAVING COUNT(*) >= 100
+    -> ORDER BY Return_Rate_Percentage DESC
+    -> LIMIT 10;
++----------------+---------+--------------+-----------------+------------------------+
+| State          | Region  | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++----------------+---------+--------------+-----------------+------------------------+
+| Odisha         | East    |         3664 |             545 |                  14.87 |
+| Punjab         | North   |         5019 |             740 |                  14.74 |
+| Gujarat        | West    |         5398 |             783 |                  14.51 |
+| Madhya Pradesh | Central |         7456 |            1079 |                  14.47 |
+| Telangana      | South   |         5619 |             804 |                  14.31 |
+| Bihar          | East    |         3769 |             538 |                  14.27 |
+| Jharkhand      | East    |         3729 |             531 |                  14.24 |
+| Goa            | West    |         5453 |             775 |                  14.21 |
+| Chhattisgarh   | Central |         7611 |            1073 |                  14.10 |
+| Uttar Pradesh  | North   |         5148 |             721 |                  14.01 |
++----------------+---------+--------------+-----------------+------------------------+
+10 rows in set (0.30 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze return rates across different marketing channels.
+mysql>
+mysql> SELECT
+    ->     Marketing_Channel,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Marketing_Channel
+    -> ORDER BY Return_Rate_Percentage DESC;
++-------------------+--------------+-----------------+------------------------+
+| Marketing_Channel | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------------+--------------+-----------------+------------------------+
+| Social Media      |        18007 |            2762 |                  15.34 |
+| Paid Search       |        19937 |            2783 |                  13.96 |
+| Organic Search    |        25123 |            3485 |                  13.87 |
+| Affiliate         |        10046 |            1379 |                  13.73 |
+| Direct            |        14789 |            2010 |                  13.59 |
+| Email             |        11898 |            1602 |                  13.46 |
+| Unknown           |          200 |              26 |                  13.00 |
++-------------------+--------------+-----------------+------------------------+
+7 rows in set (0.20 sec)
+
+mysql>
+mysql>
+mysql> -- Identify the most common reasons for product returns.
+mysql>
+mysql> SELECT
+    ->     Return_Reason,
+    ->     COUNT(*) AS Return_Count,
+    ->     ROUND(
+    ->         COUNT(*) * 100.0 /
+    ->         (SELECT COUNT(*) FROM ecommerce_orders WHERE Is_Returned = 1),
+    ->         2
+    ->     ) AS Percentage_Of_Returns
+    -> FROM ecommerce_orders
+    -> WHERE Is_Returned = 1
+    -> GROUP BY Return_Reason
+    -> ORDER BY Return_Count DESC;
++------------------+--------------+-----------------------+
+| Return_Reason    | Return_Count | Percentage_Of_Returns |
++------------------+--------------+-----------------------+
+| Not as Described |         2416 |                 17.20 |
+| Changed Mind     |         2359 |                 16.79 |
+| Wrong Item       |         2344 |                 16.69 |
+| Size/Fit Issue   |         2324 |                 16.54 |
+| Late Delivery    |         2320 |                 16.52 |
+| Damaged          |         2284 |                 16.26 |
++------------------+--------------+-----------------------+
+6 rows in set (0.17 sec)
+
+mysql>
+mysql>
+mysql> -- Examine the relationship between delivery time and return rates.
+mysql>
+mysql> SELECT
+    ->     CASE
+    ->         WHEN Delivery_Days <= 3 THEN 'Up to 3 Days'
+    ->         WHEN Delivery_Days <= 4 THEN 'Over 3 to 4 Days'
+    ->         WHEN Delivery_Days <= 5 THEN 'Over 4 to 5 Days'
+    ->         WHEN Delivery_Days <= 6 THEN 'Over 5 to 6 Days'
+    ->         ELSE 'Over 6 Days'
+    ->     END AS Delivery_Group,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Delivery_Days IS NOT NULL
+    -> GROUP BY Delivery_Group
+    -> ORDER BY MIN(Delivery_Days);
++------------------+--------------+-----------------+------------------------+
+| Delivery_Group   | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------------+--------------+-----------------+------------------------+
+| Up to 3 Days     |        31709 |            3766 |                  11.88 |
+| Over 3 to 4 Days |        17454 |            2335 |                  13.38 |
+| Over 4 to 5 Days |        17500 |            2492 |                  14.24 |
+| Over 5 to 6 Days |        14551 |            2285 |                  15.70 |
+| Over 6 Days      |        18486 |            3126 |                  16.91 |
++------------------+--------------+-----------------+------------------------+
+5 rows in set (0.23 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze return rates based on customer ratings.
+mysql>
+mysql> SELECT
+    ->     CASE
+    ->         WHEN Customer_Rating <= 3 THEN 'Low Rating (1-3)'
+    ->         WHEN Customer_Rating <= 4 THEN 'Medium Rating (Above 3-4)'
+    ->         ELSE 'High Rating (Above 4-5)'
+    ->     END AS Rating_Group,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Customer_Rating IS NOT NULL
+    -> GROUP BY Rating_Group
+    -> ORDER BY MIN(Customer_Rating);
++---------------------------+--------------+-----------------+------------------------+
+| Rating_Group              | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++---------------------------+--------------+-----------------+------------------------+
+| Low Rating (1-3)          |        32539 |            4880 |                  15.00 |
+| Medium Rating (Above 3-4) |        41366 |            5604 |                  13.55 |
+| High Rating (Above 4-5)   |        25295 |            3448 |                  13.63 |
++---------------------------+--------------+-----------------+------------------------+
+3 rows in set (0.21 sec)
+
+mysql>
+mysql>
+mysql> -- Identify product-category groups with higher return rates and at least 30 orders.
+mysql>
+mysql> SELECT
+    ->     Product_ID,
+    ->     Category,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Product_ID, Category
+    -> HAVING COUNT(*) >= 30
+    -> ORDER BY Return_Rate_Percentage DESC, Total_Orders DESC
+    -> LIMIT 10;
+Empty set (0.34 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze monthly order and return trends.
+mysql>
+mysql> SELECT
+    ->     DATE_FORMAT(Order_Date, '%Y-%m') AS Order_Month,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Order_Date IS NOT NULL
+    -> GROUP BY DATE_FORMAT(Order_Date, '%Y-%m')
+    -> ORDER BY Order_Month;
++-------------+--------------+-----------------+------------------------+
+| Order_Month | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------+--------------+-----------------+------------------------+
+| 2024-01     |         3156 |             465 |                  14.73 |
+| 2024-02     |         2938 |             433 |                  14.74 |
+| 2024-03     |         3207 |             458 |                  14.28 |
+| 2024-04     |         3015 |             448 |                  14.86 |
+| 2024-05     |         3138 |             444 |                  14.15 |
+| 2024-06     |         2996 |             391 |                  13.05 |
+| 2024-07     |         3072 |             394 |                  12.83 |
+| 2024-08     |         3080 |             430 |                  13.96 |
+| 2024-09     |         2947 |             411 |                  13.95 |
+| 2024-10     |         3135 |             455 |                  14.51 |
+| 2024-11     |         3113 |             434 |                  13.94 |
+| 2024-12     |         3085 |             434 |                  14.07 |
+| 2025-01     |         3072 |             432 |                  14.06 |
+| 2025-02     |         2764 |             398 |                  14.40 |
+| 2025-03     |         3148 |             407 |                  12.93 |
+| 2025-04     |         2982 |             391 |                  13.11 |
+| 2025-05     |         3064 |             455 |                  14.85 |
+| 2025-06     |         3077 |             440 |                  14.30 |
+| 2025-07     |         3118 |             459 |                  14.72 |
+| 2025-08     |         3024 |             403 |                  13.33 |
+| 2025-09     |         3078 |             408 |                  13.26 |
+| 2025-10     |         3109 |             463 |                  14.89 |
+| 2025-11     |         2940 |             412 |                  14.01 |
+| 2025-12     |         3099 |             440 |                  14.20 |
+| 2026-01     |         3116 |             455 |                  14.60 |
+| 2026-02     |         2768 |             353 |                  12.75 |
+| 2026-03     |         3033 |             424 |                  13.98 |
+| 2026-04     |         2969 |             415 |                  13.98 |
+| 2026-05     |         3156 |             463 |                  14.67 |
+| 2026-06     |         2931 |             416 |                  14.19 |
+| 2026-07     |         3007 |             454 |                  15.10 |
+| 2026-08     |         3112 |             446 |                  14.33 |
+| 2026-09     |         2551 |             316 |                  12.39 |
++-------------+--------------+-----------------+------------------------+
+33 rows in set (0.21 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze quarterly return trends.
+mysql>
+mysql> SELECT
+    ->     Order_Year,
+    ->     Order_Quarter,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Order_Year, Order_Quarter
+    -> ORDER BY Order_Year, Order_Quarter;
++------------+---------------+--------------+-----------------+------------------------+
+| Order_Year | Order_Quarter | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------+---------------+--------------+-----------------+------------------------+
+|       2024 |             1 |         9301 |            1356 |                  14.58 |
+|       2024 |             2 |         9149 |            1283 |                  14.02 |
+|       2024 |             3 |         9099 |            1235 |                  13.57 |
+|       2024 |             4 |         9333 |            1323 |                  14.18 |
+|       2025 |             1 |         8984 |            1237 |                  13.77 |
+|       2025 |             2 |         9123 |            1286 |                  14.10 |
+|       2025 |             3 |         9220 |            1270 |                  13.77 |
+|       2025 |             4 |         9148 |            1315 |                  14.37 |
+|       2026 |             1 |         8917 |            1232 |                  13.82 |
+|       2026 |             2 |         9056 |            1294 |                  14.29 |
+|       2026 |             3 |         8670 |            1216 |                  14.03 |
++------------+---------------+--------------+-----------------+------------------------+
+11 rows in set (0.16 sec)
+
+mysql>
+mysql>
+mysql> -- Compare return rates across payment methods.
+mysql>
+mysql> SELECT
+    ->     Payment_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Payment_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++------------------+--------------+-----------------+------------------------+
+| Payment_Method   | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------------+--------------+-----------------+------------------------+
+| Cash on Delivery |        17032 |            2725 |                  16.00 |
+| Credit Card      |        24927 |            3431 |                  13.76 |
+| UPI              |        35152 |            4789 |                  13.62 |
+| Debit Card       |        17853 |            2431 |                  13.62 |
+| Net Banking      |         5036 |             671 |                  13.32 |
++------------------+--------------+-----------------+------------------------+
+5 rows in set (0.19 sec)
+
+mysql>
+mysql>
+mysql> -- Compare return rates across shipping methods.
+mysql>
+mysql> SELECT
+    ->     Shipping_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Shipping_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++-----------------+--------------+-----------------+------------------------+
+| Shipping_Method | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-----------------+--------------+-----------------+------------------------+
+| Express         |        27961 |            3982 |                  14.24 |
+| Same Day        |         6965 |             981 |                  14.08 |
+| Standard        |        65074 |            9084 |                  13.96 |
++-----------------+--------------+-----------------+------------------------+
+3 rows in set (0.20 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze return rates based on order quantity.
+mysql>
+mysql> SELECT
+    ->     Quantity,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Quantity IS NOT NULL
+    -> GROUP BY Quantity
+    -> ORDER BY Quantity;
++----------+--------------+-----------------+------------------------+
+| Quantity | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++----------+--------------+-----------------+------------------------+
+|     1.00 |        71969 |           10083 |                  14.01 |
+|     2.00 |        20114 |            2845 |                  14.14 |
+|     3.00 |         5923 |             834 |                  14.08 |
+|     4.00 |         1994 |             285 |                  14.29 |
++----------+--------------+-----------------+------------------------+
+4 rows in set (0.15 sec)
+
+mysql>
+mysql>
+mysql> -- Analyze return rates across different order value ranges.
+mysql>
+mysql> SELECT
+    ->     CASE
+    ->         WHEN Order_Value < 1000 THEN 'Below 1000'
+    ->         WHEN Order_Value < 5000 THEN '1000 to 4999'
+    ->         WHEN Order_Value < 10000 THEN '5000 to 9999'
+    ->         ELSE '10000 and Above'
+    ->     END AS Order_Value_Group,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Order_Value IS NOT NULL
+    -> GROUP BY Order_Value_Group
+    -> ORDER BY MIN(Order_Value);
++-------------------+--------------+-----------------+------------------------+
+| Order_Value_Group | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------------+--------------+-----------------+------------------------+
+| Below 1000        |        27743 |            3876 |                  13.97 |
+| 1000 to 4999      |        50153 |            7080 |                  14.12 |
+| 5000 to 9999      |        13142 |            1822 |                  13.86 |
+| 10000 and Above   |         8962 |            1269 |                  14.16 |
++-------------------+--------------+-----------------+------------------------+
+4 rows in set (0.23 sec)
+
+mysql>
+mysql>
+mysql> -- Create a table to store product-level return risk predictions from the Python model.
+mysql>
+mysql> CREATE TABLE IF NOT EXISTS product_return_risk (
+    ->     Product_ID VARCHAR(50),
+    ->     Orders_Scored INT,
+    ->     Actual_Returns INT,
+    ->     Average_Return_Risk DECIMAL(10,6),
+    ->     Maximum_Return_Risk DECIMAL(10,6),
+    ->     Risk_Level VARCHAR(50)
+    -> );
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+
+mysql>
+mysql>
+mysql> -- Display the product return risk results after importing the Python prediction CSV.
+mysql>
+mysql> SELECT
+    ->     Product_ID,
+    ->     Orders_Scored,
+    ->     Actual_Returns,
+    ->     Average_Return_Risk,
+    ->     Maximum_Return_Risk,
+    ->     Risk_Level
+    -> FROM product_return_risk
+    -> ORDER BY Average_Return_Risk DESC
+    -> LIMIT 10;
+Empty set (0.00 sec)
+
+mysql> LOAD DATA LOCAL INFILE
+    -> 'C:/Users/Kishore/product_return_risk_analysis.csv'
+    -> INTO TABLE product_return_risk
+    -> FIELDS TERMINATED BY ','
+    -> ENCLOSED BY '"'
+    -> LINES TERMINATED BY '\n'
+    -> IGNORE 1 ROWS
+    -> (
+    ->     Product_ID,
+    ->     Orders_Scored,
+    ->     Actual_Returns,
+    ->     Average_Return_Risk,
+    ->     Maximum_Return_Risk,
+    ->     Risk_Level
+    -> );
+Query OK, 2500 rows affected, 5000 warnings (0.07 sec)
+Records: 2500  Deleted: 0  Skipped: 0  Warnings: 5000
+
+mysql> SELECT
+    ->     Product_ID,
+    ->     Orders_Scored,
+    ->     Actual_Returns,
+    ->     Average_Return_Risk,
+    ->     Maximum_Return_Risk,
+    ->     Risk_Level
+    -> FROM product_return_risk
+    -> ORDER BY Average_Return_Risk DESC
+    -> LIMIT 10;
++------------+---------------+----------------+---------------------+---------------------+----------------------+
+| Product_ID | Orders_Scored | Actual_Returns | Average_Return_Risk | Maximum_Return_Risk | Risk_Level           |
++------------+---------------+----------------+---------------------+---------------------+----------------------+
+ |PRD01991   |             4 |              1 |            0.577903 |            0.635037 | High Risk Candidate
+ |PRD01845   |             3 |              0 |            0.560042 |            0.586720 | High Risk Candidate
+ |PRD01610   |             7 |              0 |            0.552754 |            0.631668 | High Risk Candidate
+ |PRD00143   |             9 |              1 |            0.552395 |            0.624261 | High Risk Candidate
+ |PRD00578   |             4 |              0 |            0.552283 |            0.592814 | High Risk Candidate
+ |PRD00807   |             2 |              0 |            0.550130 |            0.563299 | High Risk Candidate
+ |PRD01015   |             5 |              0 |            0.549595 |            0.612900 | High Risk Candidate
+ |PRD01119   |             4 |              0 |            0.549392 |            0.619441 | High Risk Candidate
+ |PRD00834   |             4 |              0 |            0.548306 |            0.584515 | High Risk Candidate
+ |PRD00392   |             6 |              0 |            0.547434 |            0.600646 | High Risk Candidate
++------------+---------------+----------------+---------------------+---------------------+----------------------+
+10 rows in set (0.01 sec)
+
+mysql> SELECT
+    ->     Payment_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Payment_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++------------------+--------------+-----------------+------------------------+
+| Payment_Method   | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------------+--------------+-----------------+------------------------+
+| Cash on Delivery |        17032 |            2725 |                  16.00 |
+| Credit Card      |        24927 |            3431 |                  13.76 |
+| UPI              |        35152 |            4789 |                  13.62 |
+| Debit Card       |        17853 |            2431 |                  13.62 |
+| Net Banking      |         5036 |             671 |                  13.32 |
++------------------+--------------+-----------------+------------------------+
+5 rows in set (0.37 sec)
+
+mysql> SELECT
+    ->     Shipping_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Shipping_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++-----------------+--------------+-----------------+------------------------+
+| Shipping_Method | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-----------------+--------------+-----------------+------------------------+
+| Express         |        27961 |            3982 |                  14.24 |
+| Same Day        |         6965 |             981 |                  14.08 |
+| Standard        |        65074 |            9084 |                  13.96 |
++-----------------+--------------+-----------------+------------------------+
+3 rows in set (0.38 sec)
+
+mysql> SELECT
+    ->     Quantity,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Quantity
+    -> ORDER BY Quantity;
++----------+--------------+-----------------+------------------------+
+| Quantity | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++----------+--------------+-----------------+------------------------+
+|     1.00 |        71969 |           10083 |                  14.01 |
+|     2.00 |        20114 |            2845 |                  14.14 |
+|     3.00 |         5923 |             834 |                  14.08 |
+|     4.00 |         1994 |             285 |                  14.29 |
++----------+--------------+-----------------+------------------------+
+4 rows in set (0.28 sec)
+
+mysql> SELECT
+    ->     CASE
+    ->         WHEN Order_Value < 500 THEN 'Below 500'
+    ->         WHEN Order_Value < 1000 THEN '500-999'
+    ->         WHEN Order_Value < 2000 THEN '1000-1999'
+    ->         WHEN Order_Value < 5000 THEN '2000-4999'
+    ->         ELSE '5000 and Above'
+    ->     END AS Order_Value_Range,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Order_Value IS NOT NULL
+    -> GROUP BY Order_Value_Range
+    -> ORDER BY MIN(Order_Value);
++-------------------+--------------+-----------------+------------------------+
+| Order_Value_Range | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------------+--------------+-----------------+------------------------+
+| Below 500         |        10129 |            1361 |                  13.44 |
+| 500-999           |        17614 |            2515 |                  14.28 |
+| 1000-1999         |        25325 |            3568 |                  14.09 |
+| 2000-4999         |        24828 |            3512 |                  14.15 |
+| 5000 and Above    |        22104 |            3091 |                  13.98 |
++-------------------+--------------+-----------------+------------------------+
+5 rows in set (0.54 sec)
+
+mysql> SELECT
+    ->     Order_Year,
+    ->     Order_Quarter,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Order_Year, Order_Quarter
+    -> ORDER BY Order_Year, Order_Quarter;
++------------+---------------+--------------+-----------------+------------------------+
+| Order_Year | Order_Quarter | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------+---------------+--------------+-----------------+------------------------+
+|       2024 |             1 |         9301 |            1356 |                  14.58 |
+|       2024 |             2 |         9149 |            1283 |                  14.02 |
+|       2024 |             3 |         9099 |            1235 |                  13.57 |
+|       2024 |             4 |         9333 |            1323 |                  14.18 |
+|       2025 |             1 |         8984 |            1237 |                  13.77 |
+|       2025 |             2 |         9123 |            1286 |                  14.10 |
+|       2025 |             3 |         9220 |            1270 |                  13.77 |
+|       2025 |             4 |         9148 |            1315 |                  14.37 |
+|       2026 |             1 |         8917 |            1232 |                  13.82 |
+|       2026 |             2 |         9056 |            1294 |                  14.29 |
+|       2026 |             3 |         8670 |            1216 |                  14.03 |
++------------+---------------+--------------+-----------------+------------------------+
+11 rows in set (0.30 sec)
+
+mysql> SELECT
+    ->     Product_ID,
+    ->     Category,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Product_ID, Category
+    -> HAVING COUNT(*) >= 5
+    -> ORDER BY Return_Rate_Percentage DESC, Total_Orders DESC
+    -> LIMIT 20;
++------------+----------------+--------------+-----------------+------------------------+
+| Product_ID | Category       | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------+----------------+--------------+-----------------+------------------------+
+| PRD01344   | Sports         |            5 |               5 |                 100.00 |
+| PRD01703   | Electronics    |            5 |               4 |                  80.00 |
+| PRD00225   | Fashion        |            9 |               6 |                  66.67 |
+| PRD00140   | Sports         |            6 |               4 |                  66.67 |
+| PRD00586   | Books          |            6 |               4 |                  66.67 |
+| PRD01335   | Beauty         |            6 |               4 |                  66.67 |
+| PRD00377   | Beauty         |            6 |               4 |                  66.67 |
+| PRD02013   | Home & Kitchen |            6 |               4 |                  66.67 |
+| PRD01655   | Beauty         |            6 |               4 |                  66.67 |
+| PRD00157   | Electronics    |           10 |               6 |                  60.00 |
+| PRD00756   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD02070   | Sports         |            5 |               3 |                  60.00 |
+| PRD02036   | Sports         |            5 |               3 |                  60.00 |
+| PRD01236   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD00630   | Beauty         |            5 |               3 |                  60.00 |
+| PRD01258   | Beauty         |            5 |               3 |                  60.00 |
+| PRD01187   | Beauty         |            5 |               3 |                  60.00 |
+| PRD02116   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD01654   | Sports         |            5 |               3 |                  60.00 |
+| PRD02139   | Sports         |            5 |               3 |                  60.00 |
++------------+----------------+--------------+-----------------+------------------------+
+20 rows in set (0.56 sec)
+
+mysql> SELECT
+    ->     COUNT(*) AS Total_Records,
+    ->     COUNT(DISTINCT Order_ID) AS Unique_Order_IDs,
+    ->     SUM(Is_Returned = 1) AS Total_Returns,
+    ->     SUM(Is_Returned = 0) AS Non_Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Overall_Return_Rate
+    -> FROM ecommerce_orders;
++---------------+------------------+---------------+---------------------+---------------------+
+| Total_Records | Unique_Order_IDs | Total_Returns | Non_Returned_Orders | Overall_Return_Rate |
++---------------+------------------+---------------+---------------------+---------------------+
+|        100000 |           100000 |         14047 |               85953 |               14.05 |
++---------------+------------------+---------------+---------------------+---------------------+
+1 row in set (1.00 sec)
+
+mysql> -- Complete monthly return trend
+mysql>
+mysql> SELECT
+    ->     DATE_FORMAT(Order_Date, '%Y-%m') AS Order_Month,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Order_Date IS NOT NULL
+    -> GROUP BY DATE_FORMAT(Order_Date, '%Y-%m')
+    -> ORDER BY Order_Month;
++-------------+--------------+-----------------+------------------------+
+| Order_Month | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------+--------------+-----------------+------------------------+
+| 2024-01     |         3156 |             465 |                  14.73 |
+| 2024-02     |         2938 |             433 |                  14.74 |
+| 2024-03     |         3207 |             458 |                  14.28 |
+| 2024-04     |         3015 |             448 |                  14.86 |
+| 2024-05     |         3138 |             444 |                  14.15 |
+| 2024-06     |         2996 |             391 |                  13.05 |
+| 2024-07     |         3072 |             394 |                  12.83 |
+| 2024-08     |         3080 |             430 |                  13.96 |
+| 2024-09     |         2947 |             411 |                  13.95 |
+| 2024-10     |         3135 |             455 |                  14.51 |
+| 2024-11     |         3113 |             434 |                  13.94 |
+| 2024-12     |         3085 |             434 |                  14.07 |
+| 2025-01     |         3072 |             432 |                  14.06 |
+| 2025-02     |         2764 |             398 |                  14.40 |
+| 2025-03     |         3148 |             407 |                  12.93 |
+| 2025-04     |         2982 |             391 |                  13.11 |
+| 2025-05     |         3064 |             455 |                  14.85 |
+| 2025-06     |         3077 |             440 |                  14.30 |
+| 2025-07     |         3118 |             459 |                  14.72 |
+| 2025-08     |         3024 |             403 |                  13.33 |
+| 2025-09     |         3078 |             408 |                  13.26 |
+| 2025-10     |         3109 |             463 |                  14.89 |
+| 2025-11     |         2940 |             412 |                  14.01 |
+| 2025-12     |         3099 |             440 |                  14.20 |
+| 2026-01     |         3116 |             455 |                  14.60 |
+| 2026-02     |         2768 |             353 |                  12.75 |
+| 2026-03     |         3033 |             424 |                  13.98 |
+| 2026-04     |         2969 |             415 |                  13.98 |
+| 2026-05     |         3156 |             463 |                  14.67 |
+| 2026-06     |         2931 |             416 |                  14.19 |
+| 2026-07     |         3007 |             454 |                  15.10 |
+| 2026-08     |         3112 |             446 |                  14.33 |
+| 2026-09     |         2551 |             316 |                  12.39 |
++-------------+--------------+-----------------+------------------------+
+33 rows in set (0.37 sec)
+
+mysql>
+mysql>
+mysql> -- Quarterly return trend
+mysql>
+mysql> SELECT
+    ->     Order_Year,
+    ->     Order_Quarter,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Order_Year, Order_Quarter
+    -> ORDER BY Order_Year, Order_Quarter;
++------------+---------------+--------------+-----------------+------------------------+
+| Order_Year | Order_Quarter | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------+---------------+--------------+-----------------+------------------------+
+|       2024 |             1 |         9301 |            1356 |                  14.58 |
+|       2024 |             2 |         9149 |            1283 |                  14.02 |
+|       2024 |             3 |         9099 |            1235 |                  13.57 |
+|       2024 |             4 |         9333 |            1323 |                  14.18 |
+|       2025 |             1 |         8984 |            1237 |                  13.77 |
+|       2025 |             2 |         9123 |            1286 |                  14.10 |
+|       2025 |             3 |         9220 |            1270 |                  13.77 |
+|       2025 |             4 |         9148 |            1315 |                  14.37 |
+|       2026 |             1 |         8917 |            1232 |                  13.82 |
+|       2026 |             2 |         9056 |            1294 |                  14.29 |
+|       2026 |             3 |         8670 |            1216 |                  14.03 |
++------------+---------------+--------------+-----------------+------------------------+
+11 rows in set (0.32 sec)
+
+mysql>
+mysql>
+mysql> -- Payment method analysis
+mysql>
+mysql> SELECT
+    ->     Payment_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Payment_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++------------------+--------------+-----------------+------------------------+
+| Payment_Method   | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------------+--------------+-----------------+------------------------+
+| Cash on Delivery |        17032 |            2725 |                  16.00 |
+| Credit Card      |        24927 |            3431 |                  13.76 |
+| UPI              |        35152 |            4789 |                  13.62 |
+| Debit Card       |        17853 |            2431 |                  13.62 |
+| Net Banking      |         5036 |             671 |                  13.32 |
++------------------+--------------+-----------------+------------------------+
+5 rows in set (0.36 sec)
+
+mysql>
+mysql>
+mysql> -- Shipping method analysis
+mysql>
+mysql> SELECT
+    ->     Shipping_Method,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Shipping_Method
+    -> ORDER BY Return_Rate_Percentage DESC;
++-----------------+--------------+-----------------+------------------------+
+| Shipping_Method | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-----------------+--------------+-----------------+------------------------+
+| Express         |        27961 |            3982 |                  14.24 |
+| Same Day        |         6965 |             981 |                  14.08 |
+| Standard        |        65074 |            9084 |                  13.96 |
++-----------------+--------------+-----------------+------------------------+
+3 rows in set (0.34 sec)
+
+mysql>
+mysql>
+mysql> -- Quantity-wise return analysis
+mysql>
+mysql> SELECT
+    ->     Quantity,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Quantity IS NOT NULL
+    -> GROUP BY Quantity
+    -> ORDER BY Quantity;
++----------+--------------+-----------------+------------------------+
+| Quantity | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++----------+--------------+-----------------+------------------------+
+|     1.00 |        71969 |           10083 |                  14.01 |
+|     2.00 |        20114 |            2845 |                  14.14 |
+|     3.00 |         5923 |             834 |                  14.08 |
+|     4.00 |         1994 |             285 |                  14.29 |
++----------+--------------+-----------------+------------------------+
+4 rows in set (0.29 sec)
+
+mysql>
+mysql>
+mysql> -- Order value range analysis
+mysql>
+mysql> SELECT
+    ->     CASE
+    ->         WHEN Order_Value < 500 THEN 'Below 500'
+    ->         WHEN Order_Value < 1000 THEN '500-999'
+    ->         WHEN Order_Value < 2000 THEN '1000-1999'
+    ->         WHEN Order_Value < 5000 THEN '2000-4999'
+    ->         ELSE '5000 and Above'
+    ->     END AS Order_Value_Range,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> WHERE Order_Value IS NOT NULL
+    -> GROUP BY Order_Value_Range
+    -> ORDER BY MIN(Order_Value);
++-------------------+--------------+-----------------+------------------------+
+| Order_Value_Range | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++-------------------+--------------+-----------------+------------------------+
+| Below 500         |        10129 |            1361 |                  13.44 |
+| 500-999           |        17614 |            2515 |                  14.28 |
+| 1000-1999         |        25325 |            3568 |                  14.09 |
+| 2000-4999         |        24828 |            3512 |                  14.15 |
+| 5000 and Above    |        22104 |            3091 |                  13.98 |
++-------------------+--------------+-----------------+------------------------+
+5 rows in set (0.40 sec)
+
+mysql>
+mysql>
+mysql> -- Product-wise return analysis with a lower minimum order threshold
+mysql>
+mysql> SELECT
+    ->     Product_ID,
+    ->     Category,
+    ->     COUNT(*) AS Total_Orders,
+    ->     SUM(Is_Returned = 1) AS Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Return_Rate_Percentage
+    -> FROM ecommerce_orders
+    -> GROUP BY Product_ID, Category
+    -> HAVING COUNT(*) >= 5
+    -> ORDER BY Return_Rate_Percentage DESC, Total_Orders DESC
+    -> LIMIT 20;
++------------+----------------+--------------+-----------------+------------------------+
+| Product_ID | Category       | Total_Orders | Returned_Orders | Return_Rate_Percentage |
++------------+----------------+--------------+-----------------+------------------------+
+| PRD01344   | Sports         |            5 |               5 |                 100.00 |
+| PRD01703   | Electronics    |            5 |               4 |                  80.00 |
+| PRD00225   | Fashion        |            9 |               6 |                  66.67 |
+| PRD00140   | Sports         |            6 |               4 |                  66.67 |
+| PRD00586   | Books          |            6 |               4 |                  66.67 |
+| PRD01335   | Beauty         |            6 |               4 |                  66.67 |
+| PRD00377   | Beauty         |            6 |               4 |                  66.67 |
+| PRD02013   | Home & Kitchen |            6 |               4 |                  66.67 |
+| PRD01655   | Beauty         |            6 |               4 |                  66.67 |
+| PRD00157   | Electronics    |           10 |               6 |                  60.00 |
+| PRD00756   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD02070   | Sports         |            5 |               3 |                  60.00 |
+| PRD02036   | Sports         |            5 |               3 |                  60.00 |
+| PRD01236   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD00630   | Beauty         |            5 |               3 |                  60.00 |
+| PRD01258   | Beauty         |            5 |               3 |                  60.00 |
+| PRD01187   | Beauty         |            5 |               3 |                  60.00 |
+| PRD02116   | Home & Kitchen |            5 |               3 |                  60.00 |
+| PRD01654   | Sports         |            5 |               3 |                  60.00 |
+| PRD02139   | Sports         |            5 |               3 |                  60.00 |
++------------+----------------+--------------+-----------------+------------------------+
+20 rows in set (0.54 sec)
+
+mysql>
+mysql>
+mysql> -- Final data validation
+mysql>
+mysql> SELECT
+    ->     COUNT(*) AS Total_Records,
+    ->     COUNT(DISTINCT Order_ID) AS Unique_Order_IDs,
+    ->     SUM(Is_Returned = 1) AS Total_Returns,
+    ->     SUM(Is_Returned = 0) AS Non_Returned_Orders,
+    ->     ROUND(AVG(Is_Returned) * 100, 2) AS Overall_Return_Rate
+    -> FROM ecommerce_orders;
++---------------+------------------+---------------+---------------------+---------------------+
+| Total_Records | Unique_Order_IDs | Total_Returns | Non_Returned_Orders | Overall_Return_Rate |
++---------------+------------------+---------------+---------------------+---------------------+
+|        100000 |           100000 |         14047 |               85953 |               14.05 |
++---------------+------------------+---------------+---------------------+---------------------+
+1 row in set (1.01 sec)
+
+mysql>
